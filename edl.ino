@@ -1,3 +1,5 @@
+
+
 //Light Trap Augmentor
 
 //TODO: RTC circuit
@@ -11,6 +13,10 @@
 #include <Ethernet.h>
 #include <SD.h>
 #include "lta_Struct.h"
+#include <DS1307RTC.h>
+#include <Time.h>
+#include <Wire.h>
+#include <Narcoleptic.h>
 
 //Pin Assignment
 #define DHTPIN 2
@@ -20,10 +26,18 @@
 #define DHTTYPE DHT22
 
 //Global variables
+
 int mode;
 DHT dht(DHTPIN, DHTTYPE);
-byte mac[] = {  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-char server[] = "www.google.fail"; // Google
+byte mac[] = {   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+char server[] = "infocology.co.uk"; // Google
+char auth_name[] = "token";
+char auth_key[]  = "$1$jdgjNCEX$.4kM0/YL4a97jn579QDl60";
+String request = "";
+
+EthernetClient client;
+
+
 
 //Function Prototypes
 void(* resetFunc) (void) = 0;  //soft reset
@@ -32,12 +46,15 @@ void(* resetFunc) (void) = 0;  //soft reset
 void setup() {
   Serial.begin(9600); 
   while(!Serial){
-    ;
-  }
-  
+  //  ;
+ }
+
+
+
+
   //Choose run mode
   mode = mode_select();
-  
+
   //Check for SD card
   if (mode == 2 || mode == 3 || mode == 4) { 
     int i=0;
@@ -45,78 +62,99 @@ void setup() {
     while (sd_check == false && i < 10) {
       i++;
       sd_check = init_sd();
-      Serial.println(sd_check);
+      //Serial.println(sd_check);
       delay(2000);
       if (sd_check == false) {
-        error error = {3, 1};
-        error_condition(error); 
+        /*error error = {
+          3, 1        };
+        //error_condition(error); */
       }
     }
     if (sd_check == false) {
-     error error = {3, 2};
-     error_condition(error);
+      /*error error = {
+        3, 2      };
+      error_condition(error);*/
     }
   }
-  
+
+
+
+  // start the Ethernet connection:
+  if (Ethernet.begin(mac) == 0) {
+    //Serial.println("Failed to configure Ethernet using DHCP");
+    // no point in carrying on, so do nothing forevermore:
+  }
+  // give the Ethernet shield a second to initialize:
+  delay(1000);
+  //Serial.print("MY IP is ");
+  //Serial.println(Ethernet.localIP());
+  //Serial.println("connecting...");
+
+
+
+
   //Start DHT 
   dht.begin();
-  
 
 }
 
 void loop() {
   lta data = lta_get_data();
-  if (!data.fail) {
-    delay(1700);
-    data_post(data);
-  }
+  data_post(data);
+  error_blink(1);
+  Serial.println("Starting sleep.");
+  Narcoleptic.delay(6000);
+  Serial.println("Ending sleep.");
 }
 
 int mode_select() {
- //   1 - Ethernet only
- //   2 - SD card only
- //   3 - Try Ethernet, SD if fail
- //   4 - Ethernet and SD card always
- return 4; 
+  return 1; 
 }
 
 boolean sd_post(lta data) {
- //Generate the data string
- char humidity[6];
- char temperature[6];
- dtostrf(data.humidity, 1, 2, humidity);
- String dataString = "";
- dataString +=  humidity;
- dataString += ",";
- dataString +=  temperature;
- dataString += ",";
- dataString +=  data.ethernet;
- dataString += ",";
- dataString +=  data.fail;
- dataString += ",";
- 
- //Append to file
- File dataFile = SD.open("data.txt", FILE_WRITE);
- if (dataFile) {
-  dataFile.println(dataString);
-  dataFile.close();
-  Serial.println("Data saved to data.txt");
-  return true;
- } else {
-  Serial.println("Failed to open data.txt");
-  error error = {4, 1};
-  error_condition(error);
-  return false;
- }
- 
- return false; 
+  //Generate the data string
+  char humidity[6];
+  char temperature[6];
+  dtostrf(data.humidity, 1, 2, humidity);
+  dtostrf(data.temperature, 1, 2, temperature);
+  request.concat(data.time);
+  request += ",";
+  request +=  humidity;
+  request += ",";
+  request +=  temperature;
+  request += ",";
+  //request +=  data.ethernet;
+  //request += ",";
+  //Serial.println();
+  //Serial.println();
+  //Serial.println(request);
+
+  //Append to file
+  File dataFile = SD.open("data.txt", FILE_WRITE);
+  if (dataFile) {
+    dataFile.println(request);
+    dataFile.close();
+    //Serial.println("Data saved to data.txt");
+    return true;
+  } 
+  else {
+    //Serial.println("Failed to open data.txt");
+   /* error error = {
+      4, 1    };
+    error_condition(error);*/
+    return false;
+  }
+
+  return false; 
 }
+
+
 
 boolean data_post(lta data) {
   //First - attempt to post to internet
   boolean ethernet =  false;
   if (mode == 1 || mode == 3 || mode == 4) {
-    data.ethernet = true;
+    //data.ethernet = true;
 
     int j = 0;
     while (ethernet == false && j < 5) {
@@ -124,12 +162,12 @@ boolean data_post(lta data) {
       j++;
     }
     if (!ethernet) {
-      data.ethernet = false; 
+      //data.ethernet = false; 
     }
   }
   //Then SD card 
   if (mode == 2 || (mode == 3 && !ethernet) || mode == 4) {
-    data.ethernet = false;
+    //data.ethernet = false;
     boolean sd = false;
     int i = 0;
     while (sd == false && i < 5) {
@@ -140,93 +178,100 @@ boolean data_post(lta data) {
 }
 
 boolean ethernet_post(lta data) {
-     //Indicate error condition
-    error error = {2, 1};
-    error_condition(error); 
- return false; //For debugging
- EthernetClient client; 
-   // start the Ethernet connection:
-  if (Ethernet.begin(mac) == 0) {
-    Serial.println("Failed to configure Ethernet using DHCP");
-    // no point in carrying on, so do nothing forevermore:
-  }
-  // give the Ethernet shield a second to initialize:
-  delay(1000);
-  Serial.print("MY IP is ");
-  Serial.println(Ethernet.localIP());
-  Serial.println("connecting...");
+
 
   // if you get a connection, report back via serial:
   if (client.connect(server, 80)) {
-    Serial.println("connected");
+    //Serial.println("connected");
     // Make a HTTP request:
-    client.println("GET /search?q=arduino HTTP/1.0");
+
+    request = "";
+    request += "GET ";
+    request += "/other/drupal7/arduino/post?";
+
+    request += auth_name;
+    request += "=";
+    request += auth_key;
+
+    char humidity[6];
+    char temperature[6];
+    dtostrf(data.humidity, 1, 2, humidity);
+    dtostrf(data.temperature, 1, 2, temperature);
+
+
+    request += "&field_temp=";
+    request += temperature;
+
+    request += "&field_humidity=";
+    request += humidity;
+    
+    request += "&field_time=";
+    request += data.time; 
+
+    request += " HTTP/1.0";
+
+    //Serial.print("Requesting: ");
+   // Serial.println(request);
+
+    client.println(request);
+    client.println ("Host: infocology.co.uk");
+    //client.println("Connection: close");
     client.println();
   } 
   else {
     // kf you didn't get a connection to the server:
-    Serial.println("connection failed");
+   // Serial.println("connection failed");
     return false;
   }
-  // if there are incoming bytes available 
-  // from the server, read them and print them:
-  if (client.available()) {
-    char c = client.read();
-    Serial.print(c);
-  }
-
-  // if the server's disconnected, stop the client:
-  if (!client.connected()) {
-    Serial.println();
-    Serial.println("disconnecting.");
-    client.stop();
-  }
+  client.stop();
   return true;
 }
 
 boolean init_sd() {
- Serial.print("Initializing SD card...");
+  //Serial.print("Initializing SD card...");
   // make sure that the default chip select pin is set to
   // output, even if you don't use it:
   pinMode(10, OUTPUT);
-  
+
   // see if the card is present and can be initialized:
   if (!SD.begin(SDPIN)) {
-    Serial.println("Card failed, or not present");
+    //Serial.println("Card failed, or not present");
     // don't do anything more:
     return false;
   }
-  Serial.println("card initialized.");  
+  //Serial.println("card initialized.");  
   return true;
 }
 
 lta lta_get_data(){
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   boolean ethernet = false;
   boolean fail = false;
   // check if returns are valid, if they are NaN (not a number) then something went wrong!
   if (isnan(t) || isnan(h) || (t == 0 && h == 0)) {
-    Serial.println("Failed to read from DHT");
-    error error =  {1, 1};
-    error_condition(error);
+    //Serial.println("Failed to read from DHT");
+    /*error error =  {
+      1, 1    };
+    error_condition(error);*/
     fail = true;
-  } else {
-    Serial.print("Humidity: "); 
-    Serial.print(h);
-    Serial.print(" %\t");
-    Serial.print("Temperature: "); 
-    Serial.print(t);
-    Serial.println(" *C");
+  } 
+  else {
+   // Serial.print("Humidity: "); 
+    //Serial.print(h);
+    //Serial.print(" %\t");
+    //Serial.print("Temperature: "); 
+   // Serial.print(t);
+   // Serial.println(" *C");
     fail = false;
   }
   lta data = {
+    RTC.get(),
     h,
-    t,
-    ethernet,
-    fail
+    t
   };
   return data;
 
@@ -249,87 +294,32 @@ lta lta_get_data(){
 
 
 
-
+/*
 void error_condition(error error) {
-  Serial.println("Error condition encountered:");
-  Serial.println(error.condition);
-  if (error.condition == 1) {
-    if (!isnan(error.level)) {
-      error_blink_pair(error.level); 
-    }
-  }
-  
-  if (error.condition == 2) {
-    if (!isnan(error.level)) {
-      error_blink(error.level); 
-    }
-  }
-  
-  if (error.condition == 3) {
-    if (error.level == 1) {
-      error_blink(error.level);
-    }
-    if (error.level == 2) {
-      error_fatal_reset();
-    }
-  }
-  
-  if (error.condition == 4) {
-    if (error.level == 1) {
-      error_blink(2);
-    }
-    if (error.level == 2) {
-      error_fatal_reset();
-    }
-  }
-  
+  //Serial.println("Error condition encountered:");
+  //Serial.println(error.condition);
+
   //Log error to SD card
-  String errorString = "";
-  errorString += error.condition;
-  errorString += ",";
-  errorString += error.level;
-  
+  request = "";
+  request += error.condition;
+  request += ",";
+  request += error.level;
+
   File errorFile = SD.open("error.log", FILE_WRITE);
   if (errorFile) {
-    errorFile.println(errorString);
+    errorFile.println(request);
     errorFile.close();
   }
- 
-}
+
+}*/
 
 void error_blink(int repeat) {
   pinMode(9, OUTPUT);
   for (int i =0 ; i < repeat; i++) {
-   digitalWrite(9, HIGH);
-   delay(200);
-   digitalWrite(9, LOW);
-   delay(200);
+    digitalWrite(9, HIGH);
+    delay(200);
+    digitalWrite(9, LOW);
+    delay(200);
   }
 }
-
-void error_blink_pair(int repeat) {
-  pinMode(9, OUTPUT);
-  for (int i =0 ; i < repeat; i++) {
-   digitalWrite(9, HIGH);
-   delay(50);
-   digitalWrite(9, LOW);
-   delay(50);
-   digitalWrite(9, HIGH);
-   delay(50);
-   digitalWrite(9, LOW);
-   delay(200);
-  }
-}
-
-void error_blink_fatal(){
-  pinMode(9, OUTPUT);
-  digitalWrite(9, HIGH);
-  delay(3000);
-}
-
-void error_fatal_reset() {
-  error_blink_fatal();
-  resetFunc(); 
-}
-
 
