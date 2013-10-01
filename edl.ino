@@ -22,14 +22,16 @@
 #define SDPIN  4
 
 //Global variables
-int mode;
-DHT dht(DHTPIN, DHTTYPE);
+int mode;  //The mode that the device is running in
+
+EthernetClient client;
 byte mac[] = {   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 char server[] = "infocology.co.uk"; // Google
 char auth_name[] = "token";
 char auth_key[]  = "$1$jdgjNCEX$.4kM0/YL4a97jn579QDl60";
+
+DHT dht(DHTPIN, DHTTYPE);
 Sleep sleep;
-EthernetClient client;
 
 //Function Prototypes
 void(* softReset) (void) = 0;  //soft reset
