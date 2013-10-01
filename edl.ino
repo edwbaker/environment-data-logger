@@ -358,9 +358,9 @@ void error_blink(int repeat) {
   pinMode(9, OUTPUT);
   for (int i =0 ; i < repeat; i++) {
     digitalWrite(9, HIGH);
-    delay(20);
+    delay(50);
     digitalWrite(9, LOW);
-    delay(20);
+    delay(50);
   }
 }
 
