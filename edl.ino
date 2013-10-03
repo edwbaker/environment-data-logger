@@ -368,4 +368,5 @@ void serial_boilerplate() {
   Serial.println("Ecological Data Logger v0.1");
   Serial.println("===========================");
   Serial.println();
+  Serial.println("Developed by Ed Baker: http://ebaker.me.uk");
 }
